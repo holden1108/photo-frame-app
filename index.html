@@ -441,6 +441,122 @@
       URL.revokeObjectURL(url);
     };
     im.src = url;
+
+    if (!captionInput.value.trim()){
+      readExifCaption(file).then(caption => {
+        if (caption && !captionInput.value.trim()){
+          captionInput.value = caption;
+          enforceCaptionMinThickness();
+          render();
+        }
+      }).catch(() => {});
+    }
+  }
+
+  // ---- EXIF (Make / Model / LensModel) ----
+  function readExifCaption(file){
+    return file.slice(0, 262144).arrayBuffer().then(buf => {
+      const exif = parseExif(buf);
+      if (!exif) return null;
+      let cam = '';
+      if (exif.make && exif.model){
+        cam = exif.model.toLowerCase().includes(exif.make.toLowerCase())
+          ? exif.model
+          : `${exif.make} ${exif.model}`;
+      } else {
+        cam = exif.model || exif.make || '';
+      }
+      const parts = [cam, exif.lensModel].map(s => (s || '').trim()).filter(Boolean);
+      return parts.length ? parts.join(' / ') : null;
+    });
+  }
+
+  function parseExif(buf){
+    const view = new DataView(buf);
+    if (view.byteLength < 4 || view.getUint16(0) !== 0xFFD8) return null;
+
+    let offset = 2;
+    while (offset + 4 <= view.byteLength){
+      if (view.getUint8(offset) !== 0xFF) break; // not a marker, malformed data
+      const marker = view.getUint16(offset);
+
+      if (marker === 0xFFDA) break; // start of scan: metadata segments are done
+      if (marker === 0xFF01 || (marker >= 0xFFD0 && marker <= 0xFFD9)){
+        offset += 2; // standalone markers with no length field
+        continue;
+      }
+
+      const segLength = view.getUint16(offset + 2);
+      if (marker === 0xFFE1){
+        const segStart = offset + 4;
+        if (
+          segStart + 6 <= view.byteLength &&
+          view.getUint32(segStart) === 0x45786966 && // "Exif"
+          view.getUint16(segStart + 4) === 0x0000
+        ){
+          return parseTiff(view, segStart + 6);
+        }
+      }
+      offset += 2 + segLength;
+    }
+    return null;
+  }
+
+  function parseTiff(view, tiffStart){
+    if (tiffStart + 8 > view.byteLength) return null;
+    const bom = view.getUint16(tiffStart);
+    const little = bom === 0x4949;
+    if (!little && bom !== 0x4D4D) return null;
+    if (view.getUint16(tiffStart + 2, little) !== 0x002A) return null;
+
+    const ifd0Offset = view.getUint32(tiffStart + 4, little);
+    const ifd0 = readIfd(view, tiffStart, tiffStart + ifd0Offset, little);
+    const result = { make: ifd0[0x010F], model: ifd0[0x0110], lensModel: undefined };
+
+    const exifIfdPtr = ifd0.__raw && ifd0.__raw[0x8769];
+    if (exifIfdPtr){
+      const exifIfd = readIfd(view, tiffStart, tiffStart + exifIfdPtr, little);
+      result.lensModel = exifIfd[0xA434];
+    }
+    return (result.make || result.model || result.lensModel) ? result : null;
+  }
+
+  function readIfd(view, tiffStart, ifdOffset, little){
+    const out = { __raw: {} };
+    if (ifdOffset + 2 > view.byteLength) return out;
+    const entryCount = view.getUint16(ifdOffset, little);
+    for (let i = 0; i < entryCount; i++){
+      const entryOffset = ifdOffset + 2 + i * 12;
+      if (entryOffset + 12 > view.byteLength) break;
+      const tag = view.getUint16(entryOffset, little);
+      const type = view.getUint16(entryOffset + 2, little);
+      const count = view.getUint32(entryOffset + 4, little);
+      const valueFieldOffset = entryOffset + 8;
+
+      if (type === 2){ // ASCII
+        const byteLen = count;
+        let strStart;
+        if (byteLen <= 4){
+          strStart = valueFieldOffset;
+        } else {
+          strStart = tiffStart + view.getUint32(valueFieldOffset, little);
+        }
+        if (strStart + byteLen <= view.byteLength){
+          let s = '';
+          for (let j = 0; j < byteLen; j++){
+            const code = view.getUint8(strStart + j);
+            if (code === 0) break;
+            s += String.fromCharCode(code);
+          }
+          out[tag] = s.trim();
+        }
+      } else if (type === 4){ // LONG
+        out.__raw[tag] = view.getUint32(valueFieldOffset, little);
+      } else if (type === 3){ // SHORT
+        out.__raw[tag] = view.getUint16(valueFieldOffset, little);
+      }
+    }
+    return out;
   }
 
   // ---- controls ----
