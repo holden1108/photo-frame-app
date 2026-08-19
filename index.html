@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>写真フレーム作成</title>
+<style>
+  :root{
+    --bg: #f4f2ee;
+    --panel: #ffffff;
+    --ink: #2b2926;
+    --ink-soft: #75706a;
+    --line: #e4e0d9;
+    --accent: #b5764a;
+    --accent-ink: #ffffff;
+    --radius: 14px;
+    --shadow: 0 8px 24px rgba(43,41,38,0.08);
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; height:100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+  }
+  body{
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+  }
+  header{
+    padding: 18px 28px 10px;
+  }
+  header h1{
+    font-size: 20px;
+    margin: 0 0 2px;
+    letter-spacing: .02em;
+  }
+  header p{
+    margin:0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  main{
+    flex:1;
+    display:flex;
+    gap:24px;
+    padding: 12px 28px 28px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .stage{
+    flex: 1 1 480px;
+    min-height: 480px;
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 24px;
+    position: relative;
+    min-width: 320px;
+  }
+  .dropzone{
+    width:100%;
+    height:100%;
+    min-height: 420px;
+    border: 2px dashed #cfc8bd;
+    border-radius: 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    color: var(--ink-soft);
+    cursor:pointer;
+    transition: border-color .15s, background .15s;
+    text-align:center;
+    padding: 20px;
+  }
+  .dropzone.dragover{
+    border-color: var(--accent);
+    background: #fbf3ec;
+    color: var(--accent);
+  }
+  .dropzone svg{ width:44px; height:44px; opacity:.5; }
+  .dropzone b{ font-size:14px; font-weight:600; }
+  .dropzone span{ font-size:12px; }
+  #fileInput{ display:none; }
+
+  #previewWrap{
+    display:none;
+    width:100%;
+    height:100%;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+  }
+  #previewCanvas{
+    max-width:100%;
+    max-height: 65vh;
+    border-radius: 4px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+  }
+  .replaceBtn{
+    font-size:12px;
+    color: var(--ink-soft);
+    background:none;
+    border:1px solid var(--line);
+    border-radius: 20px;
+    padding: 6px 14px;
+    cursor:pointer;
+  }
+  .replaceBtn:hover{ border-color: var(--accent); color: var(--accent); }
+
+  .panel{
+    flex: 0 0 320px;
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px 22px 24px;
+    display:flex;
+    flex-direction:column;
+    gap: 20px;
+  }
+  .panel[hidden]{ display:none; }
+  fieldset{
+    border: none;
+    padding: 0;
+    margin: 0;
+    display:flex;
+    flex-direction:column;
+    gap: 10px;
+  }
+  legend{
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 0 0 6px;
+  }
+  .row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+  }
+  .row label{ font-size: 13px; }
+  .row output{ font-size:12px; color: var(--ink-soft); min-width: 34px; text-align:right; }
+  input[type=range]{
+    width:100%;
+    accent-color: var(--accent);
+  }
+  .colorRow{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap: wrap;
+  }
+  input[type=color]{
+    width: 38px; height: 38px;
+    border: none;
+    border-radius: 8px;
+    padding:0;
+    cursor:pointer;
+    background:none;
+  }
+  .swatches{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .swatch{
+    width: 22px; height:22px;
+    border-radius:50%;
+    border: 1px solid var(--line);
+    cursor:pointer;
+  }
+  .swatch.active{
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  select, input[type=number]{
+    width:100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    font-size: 13px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .checkRow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+  }
+  .checkRow input{ accent-color: var(--accent); }
+  .dims{
+    font-size:11px;
+    color: var(--ink-soft);
+    margin-top:-6px;
+  }
+  .downloadBtn{
+    margin-top: 4px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border:none;
+    border-radius: 10px;
+    padding: 13px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor:pointer;
+    transition: filter .15s, transform .05s;
+  }
+  .downloadBtn:hover{ filter: brightness(1.06); }
+  .downloadBtn:active{ transform: scale(0.98); }
+  .downloadBtn:disabled{
+    opacity: .5;
+    cursor:not-allowed;
+  }
+  .hint{
+    font-size: 11px;
+    color: var(--ink-soft);
+    line-height:1.5;
+  }
+
+  @media (max-width: 720px){
+    header{ padding: 14px 16px 8px; }
+    header h1{ font-size: 17px; }
+    header p{ font-size: 12px; }
+    main{
+      padding: 8px 12px 20px;
+      gap: 14px;
+    }
+    .stage{
+      min-height: 0;
+      min-width: 0;
+      padding: 14px;
+    }
+    .dropzone{
+      min-height: 260px;
+      padding: 16px;
+    }
+    .dropzone svg{ width:36px; height:36px; }
+    #previewCanvas{ max-height: 48vh; }
+    .panel{
+      flex: 1 1 100%;
+      width: 100%;
+      padding: 18px;
+    }
+    /* prevent iOS auto-zoom on focus (needs >=16px) */
+    select, input[type=number], input[type=text]{
+      font-size: 16px;
+    }
+    .downloadBtn{
+      padding: 15px 16px;
+      font-size: 15px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>写真フレーム作成</h1>
+  <p>写真をドラッグ＆ドロップしてシンプルな枠を追加。切り抜き・比率変更なしで、元の写真はそのまま加工されません。</p>
+</header>
+
+<main>
+  <div class="stage" id="stage">
+    <div class="dropzone" id="dropzone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <b>ここに写真をドロップ</b>
+      <span>またはクリックして選択（縦・横どちらもOK）</span>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div id="previewWrap">
+      <canvas id="previewCanvas"></canvas>
+      <button class="replaceBtn" id="replaceBtn">別の写真に変更</button>
+    </div>
+  </div>
+
+  <div class="panel" id="panel" hidden>
+    <fieldset>
+      <legend>枠の太さ</legend>
+      <div class="row">
+        <label for="thickness">太さ</label>
+        <output id="thicknessVal">6%</output>
+      </div>
+      <input type="range" id="thickness" min="0" max="20" step="0.5" value="6">
+    </fieldset>
+
+    <fieldset>
+      <legend>枠の色</legend>
+      <div class="colorRow">
+        <input type="color" id="colorPicker" value="#ffffff">
+        <div class="swatches" id="swatches"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <label class="checkRow">
+        <input type="checkbox" id="polaroid">
+        下側を広くする（ポラロイド風）
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>キャプション</legend>
+      <input type="text" id="captionInput" placeholder="例：SONY α7IV / FE 35mm F1.4" maxlength="60">
+      <p class="hint" style="margin:0;">入力すると写真の下に表示されます（自動で余白を確保）。</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>書き出し設定</legend>
+      <div class="row">
+        <label for="longEdge">長辺のサイズ</label>
+      </div>
+      <input type="number" id="longEdge" min="200" max="8000" step="10" value="2000">
+      <div class="dims" id="dimsInfo"></div>
+
+      <div class="row" style="margin-top:6px;">
+        <label for="format">形式</label>
+      </div>
+      <select id="format">
+        <option value="image/png">PNG（高画質）</option>
+        <option value="image/jpeg">JPEG（軽量）</option>
+      </select>
+
+      <div id="qualityRow" style="display:none;">
+        <div class="row">
+          <label for="quality">JPEG品質</label>
+          <output id="qualityVal">90%</output>
+        </div>
+        <input type="range" id="quality" min="50" max="100" step="5" value="90">
+      </div>
+    </fieldset>
+
+    <button class="downloadBtn" id="downloadBtn">画像を出力</button>
+    <p class="hint">枠は写真の周囲に追加されるだけで、元の写真の切り抜き・拡大縮小比率の変更は行いません。書き出し時は指定した長辺サイズに合わせて全体（写真＋枠）を出力します。</p>
+  </div>
+</main>
+
+<script>
+(function(){
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const stage = document.getElementById('stage');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewCanvas = document.getElementById('previewCanvas');
+  const replaceBtn = document.getElementById('replaceBtn');
+  const panel = document.getElementById('panel');
+
+  const thickness = document.getElementById('thickness');
+  const thicknessVal = document.getElementById('thicknessVal');
+  const colorPicker = document.getElementById('colorPicker');
+  const swatchesEl = document.getElementById('swatches');
+  const polaroid = document.getElementById('polaroid');
+  const captionInput = document.getElementById('captionInput');
+  const longEdge = document.getElementById('longEdge');
+  const dimsInfo = document.getElementById('dimsInfo');
+  const format = document.getElementById('format');
+  const qualityRow = document.getElementById('qualityRow');
+  const quality = document.getElementById('quality');
+  const qualityVal = document.getElementById('qualityVal');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  const ctx = previewCanvas.getContext('2d');
+
+  let img = null;
+  let frameColor = '#ffffff';
+
+  const SWATCHES = ['#ffffff', '#000000', '#f4efe6', '#3a3a3a', '#c9a876', '#7a8b76'];
+  SWATCHES.forEach((c, i) => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (i === 0 ? ' active' : '');
+    s.style.background = c;
+    s.dataset.color = c;
+    s.addEventListener('click', () => {
+      frameColor = c;
+      colorPicker.value = c;
+      updateSwatchActive(c);
+      render();
+    });
+    swatchesEl.appendChild(s);
+  });
+
+  function updateSwatchActive(c){
+    [...swatchesEl.children].forEach(s => {
+      s.classList.toggle('active', s.dataset.color.toLowerCase() === c.toLowerCase());
+    });
+  }
+
+  colorPicker.addEventListener('input', () => {
+    frameColor = colorPicker.value;
+    updateSwatchActive(frameColor);
+    render();
+  });
+
+  // ---- file loading ----
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => {
+    if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  ['dragenter','dragover'].forEach(ev => {
+    dropzone.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave','drop'].forEach(ev => {
+    dropzone.addEventListener(ev, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) loadFile(f);
+  });
+
+  replaceBtn.addEventListener('click', () => fileInput.click());
+
+  function loadFile(file){
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      dropzone.style.display = 'none';
+      previewWrap.style.display = 'flex';
+      panel.hidden = false;
+      render();
+      URL.revokeObjectURL(url);
+    };
+    im.src = url;
+  }
+
+  // ---- controls ----
+  const CAPTION_MIN_THICKNESS = 10; // %
+  const CAPTION_FONT_RATIO = 0.032; // fixed, relative to photo's short side
+
+  function enforceCaptionMinThickness(){
+    if (captionInput.value.trim() && parseFloat(thickness.value) < CAPTION_MIN_THICKNESS){
+      thickness.value = CAPTION_MIN_THICKNESS;
+      thicknessVal.textContent = CAPTION_MIN_THICKNESS + '%';
+    }
+  }
+
+  thickness.addEventListener('input', () => {
+    enforceCaptionMinThickness();
+    thicknessVal.textContent = thickness.value + '%';
+    render();
+  });
+  polaroid.addEventListener('change', render);
+  captionInput.addEventListener('input', () => {
+    enforceCaptionMinThickness();
+    render();
+  });
+  longEdge.addEventListener('input', render);
+
+  format.addEventListener('change', () => {
+    qualityRow.style.display = format.value === 'image/jpeg' ? 'block' : 'none';
+  });
+  quality.addEventListener('input', () => {
+    qualityVal.textContent = quality.value + '%';
+  });
+
+  // ---- geometry ----
+  function computeGeometry(){
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const shortSide = Math.min(w, h);
+    const caption = captionInput.value.trim();
+    let thicknessPercent = parseFloat(thickness.value);
+    if (caption) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
+    const t = (thicknessPercent / 100) * shortSide;
+    const top = t, left = t, right = t;
+    const bottom = polaroid.checked ? t * 2.6 : t;
+    return {
+      innerW: w, innerH: h,
+      top, left, right, bottom,
+      caption, shortSide,
+      totalW: w + left + right,
+      totalH: h + top + bottom
+    };
+  }
+
+  function getContrastTextColor(hex){
+    const c = hex.replace('#', '');
+    const r = parseInt(c.substr(0,2),16), g = parseInt(c.substr(2,2),16), b = parseInt(c.substr(4,2),16);
+    const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
+    return luminance > 0.55 ? '#2b2926' : '#f2f0ec';
+  }
+
+  function drawFrame(canvas, cctx, scale, geo){
+    canvas.width = Math.round(geo.totalW * scale);
+    canvas.height = Math.round(geo.totalH * scale);
+    cctx.fillStyle = frameColor;
+    cctx.fillRect(0, 0, canvas.width, canvas.height);
+    cctx.drawImage(
+      img,
+      geo.left * scale, geo.top * scale,
+      geo.innerW * scale, geo.innerH * scale
+    );
+
+    if (geo.caption){
+      const areaTop = (geo.top + geo.innerH) * scale;
+      const areaHeight = geo.bottom * scale;
+      let fontSize = geo.shortSide * scale * CAPTION_FONT_RATIO;
+      cctx.textAlign = 'center';
+      cctx.textBaseline = 'middle';
+      cctx.fillStyle = getContrastTextColor(frameColor);
+
+      const maxTextWidth = canvas.width * 0.88;
+      cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+      let w = cctx.measureText(geo.caption).width;
+      if (w > maxTextWidth){
+        fontSize *= maxTextWidth / w;
+        cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+      }
+      cctx.fillText(geo.caption, canvas.width / 2, areaTop + areaHeight / 2);
+    }
+  }
+
+  function render(){
+    if (!img) return;
+    const geo = computeGeometry();
+
+    // screen preview: fit within max box
+    const maxDim = Math.min(stage.clientWidth - 48, 640);
+    const maxH = 560;
+    const fitScale = Math.min(maxDim / geo.totalW, maxH / geo.totalH);
+    drawFrame(previewCanvas, ctx, fitScale, geo);
+
+    const le = parseInt(longEdge.value || '2000', 10);
+    const outScale = le / Math.max(geo.totalW, geo.totalH);
+    const outW = Math.round(geo.totalW * outScale);
+    const outH = Math.round(geo.totalH * outScale);
+    dimsInfo.textContent = `出力サイズ: ${outW} × ${outH} px`;
+  }
+
+  window.addEventListener('resize', () => { if (img) render(); });
+
+  // ---- download ----
+  function blobToBase64(blob){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  downloadBtn.addEventListener('click', () => {
+    if (!img) return;
+    const geo = computeGeometry();
+    const le = Math.max(200, Math.min(8000, parseInt(longEdge.value || '2000', 10)));
+    const outScale = le / Math.max(geo.totalW, geo.totalH);
+
+    const outCanvas = document.createElement('canvas');
+    const outCtx = outCanvas.getContext('2d');
+    drawFrame(outCanvas, outCtx, outScale, geo);
+
+    const mime = format.value;
+    const q = mime === 'image/jpeg' ? parseInt(quality.value, 10) / 100 : undefined;
+    const ext = mime === 'image/jpeg' ? 'jpg' : 'png';
+
+    downloadBtn.disabled = true;
+    downloadBtn.textContent = '書き出し中…';
+
+    outCanvas.toBlob(async blob => {
+      const isNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+
+      if (isNative && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem){
+        try {
+          const base64 = await blobToBase64(blob);
+          const filename = `framed-photo-${Date.now()}.${ext}`;
+          const { Filesystem, Share } = window.Capacitor.Plugins;
+          const result = await Filesystem.writeFile({
+            path: filename,
+            data: base64,
+            directory: 'CACHE'
+          });
+          if (Share){
+            await Share.share({
+              title: 'フレーム写真を保存',
+              url: result.uri,
+              dialogTitle: '保存先を選択'
+            });
+          }
+        } catch (err){
+          alert('保存に失敗しました: ' + err.message);
+        }
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = '画像を出力';
+        return;
+      }
+
+      // ブラウザではファイルとしてダウンロード
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `framed-photo.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = '画像を出力';
+    }, mime, q);
+  });
+})();
+</script>
+</body>
+</html>
