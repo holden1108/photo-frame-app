@@ -1,0 +1,38 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Copy app into desktop project
+        shell: bash
+        run: |
+          mkdir -p desktop/app
+          cp www/index.html desktop/app/index.html
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build portable exe
+        working-directory: desktop
+        run: npx electron-builder --win portable --publish never
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-frame-windows-exe
+          path: desktop/dist/PhotoFrame-portable.exe

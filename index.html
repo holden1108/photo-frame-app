@@ -410,20 +410,21 @@
     if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
   });
 
+  // ドロップはウィンドウ全体で受け付ける（写真表示後の差し替え、ページ遷移の防止）
   ['dragenter','dragover'].forEach(ev => {
-    dropzone.addEventListener(ev, e => {
-      e.preventDefault(); e.stopPropagation();
+    window.addEventListener(ev, e => {
+      e.preventDefault();
       dropzone.classList.add('dragover');
     });
   });
   ['dragleave','drop'].forEach(ev => {
-    dropzone.addEventListener(ev, e => {
-      e.preventDefault(); e.stopPropagation();
+    window.addEventListener(ev, e => {
+      e.preventDefault();
       dropzone.classList.remove('dragover');
     });
   });
-  dropzone.addEventListener('drop', e => {
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  window.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f && f.type.startsWith('image/')) loadFile(f);
   });
 
