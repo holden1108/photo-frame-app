@@ -183,7 +183,7 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  select, input[type=number]{
+  select, input[type=number], input[type=text]{
     width:100%;
     padding: 8px 10px;
     border-radius: 8px;
@@ -325,6 +325,12 @@
     </fieldset>
 
     <fieldset>
+      <legend>署名（右下）</legend>
+      <input type="text" id="signatureInput" value="@holden1108" maxlength="30">
+      <p class="hint" style="margin:0;">灰色で薄く表示されます。空欄にすると非表示になります。</p>
+    </fieldset>
+
+    <fieldset>
       <legend>書き出し設定</legend>
       <div class="row">
         <label for="longEdge">長辺のサイズ</label>
@@ -371,6 +377,7 @@
   const polaroid = document.getElementById('polaroid');
   const captionInput = document.getElementById('captionInput');
   const logoSelect = document.getElementById('logoSelect');
+  const signatureInput = document.getElementById('signatureInput');
   const longEdge = document.getElementById('longEdge');
   const dimsInfo = document.getElementById('dimsInfo');
   const format = document.getElementById('format');
@@ -445,6 +452,7 @@
       dropzone.style.display = 'none';
       previewWrap.style.display = 'flex';
       panel.hidden = false;
+      enforceCaptionMinThickness();
       render();
       URL.revokeObjectURL(url);
     };
@@ -701,10 +709,12 @@
   const CAPTION_FONT_RATIO = 0.032; // fixed, relative to photo's short side
   const LOGO_FONT_RATIO = 0.04;     // fixed, relative to photo's short side
   const LOGO_IMAGE_HEIGHT_RATIO = 0.045; // 画像ロゴの高さ（写真の短辺比、固定）
+  const SIGNATURE_FONT_RATIO = 0.024;    // 署名の文字サイズ（写真の短辺比、固定）
+  const SIGNATURE_COLOR = 'rgba(128, 128, 128, 0.6)'; // 明るい枠にも暗い枠にも薄く見える灰色
 
-  // キャプションまたはロゴを入れる間は、下の文字帯のために枠を最低このサイズにする
+  // キャプション・ロゴ・署名のどれかを入れる間は、下の文字帯のために枠を最低このサイズにする
   function enforceCaptionMinThickness(){
-    const hasBottomText = captionInput.value.trim() || logoSelect.value;
+    const hasBottomText = captionInput.value.trim() || logoSelect.value || signatureInput.value.trim();
     if (hasBottomText && parseFloat(thickness.value) < CAPTION_MIN_THICKNESS){
       thickness.value = CAPTION_MIN_THICKNESS;
       thicknessVal.textContent = CAPTION_MIN_THICKNESS + '%';
@@ -727,6 +737,10 @@
     enforceCaptionMinThickness();
     render();
   });
+  signatureInput.addEventListener('input', () => {
+    enforceCaptionMinThickness();
+    render();
+  });
   longEdge.addEventListener('input', render);
 
   format.addEventListener('change', () => {
@@ -742,15 +756,16 @@
     const shortSide = Math.min(w, h);
     const caption = captionInput.value.trim();
     const logo = logoSelect.value;
+    const signature = signatureInput.value.trim();
     let thicknessPercent = parseFloat(thickness.value);
-    if (caption || logo) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
+    if (caption || logo || signature) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
     const t = (thicknessPercent / 100) * shortSide;
     const top = t, left = t, right = t;
     const bottom = polaroid.checked ? t * 2.6 : t;
     return {
       innerW: w, innerH: h,
       top, left, right, bottom,
-      caption, logo, shortSide,
+      caption, logo, signature, shortSide,
       totalW: w + left + right,
       totalH: h + top + bottom
     };
@@ -774,7 +789,7 @@
       geo.innerW * scale, geo.innerH * scale
     );
 
-    if (geo.caption || geo.logo){
+    if (geo.caption || geo.logo || geo.signature){
       const areaTop = (geo.top + geo.innerH) * scale;
       const areaHeight = geo.bottom * scale;
       const midY = areaTop + areaHeight / 2;
@@ -804,12 +819,25 @@
         leftReserve = logoX + logoW + logoSize;
       }
 
-      // 中央: キャプション（ロゴと重ならない幅に収める）
+      // 右下: 署名（写真の右端にそろえる。幅だけ先に測り、描画は最後）
+      let rightReserve = canvas.width; // 右側の文字が使っている領域の左端
+      let sigSize = 0, sigX = 0;
+      if (geo.signature){
+        sigSize = geo.shortSide * scale * SIGNATURE_FONT_RATIO;
+        sigX = (geo.left + geo.innerW) * scale;
+        cctx.font = `${sigSize}px ${SANS}`;
+        const sigW = cctx.measureText(geo.signature).width;
+        rightReserve = sigX - sigW - sigSize * 2;
+      }
+
+      // 中央: キャプション（左右のロゴ・署名と重ならない幅に収める）
       if (geo.caption){
         let fontSize = geo.shortSide * scale * CAPTION_FONT_RATIO;
         cctx.textAlign = 'center';
-        const maxTextWidth = leftReserve
-          ? Math.max(2 * (canvas.width / 2 - leftReserve), canvas.width * 0.2)
+        cctx.fillStyle = getContrastTextColor(frameColor);
+        const half = Math.min(canvas.width / 2 - leftReserve, rightReserve - canvas.width / 2);
+        const maxTextWidth = (leftReserve || geo.signature)
+          ? Math.min(canvas.width * 0.88, Math.max(2 * half, canvas.width * 0.2))
           : canvas.width * 0.88;
         cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
         const w = cctx.measureText(geo.caption).width;
@@ -818,6 +846,13 @@
           cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
         }
         cctx.fillText(geo.caption, canvas.width / 2, midY);
+      }
+
+      if (geo.signature){
+        cctx.textAlign = 'right';
+        cctx.font = `${sigSize}px ${SANS}`;
+        cctx.fillStyle = SIGNATURE_COLOR;
+        cctx.fillText(geo.signature, sigX, midY);
       }
     }
   }
