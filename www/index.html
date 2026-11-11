@@ -321,7 +321,7 @@
     <fieldset>
       <legend>メーカーロゴ（左下）</legend>
       <select id="logoSelect"></select>
-      <p class="hint" style="margin:0;">写真のEXIFから自動選択されます。メーカー書体風の文字で表示します（公式ロゴ画像ではありません）。</p>
+      <p class="hint" style="margin:0;">写真のEXIFから自動選択されます。Canonはロゴ画像、その他のメーカーは書体風の文字で表示します。</p>
     </fieldset>
 
     <fieldset>
@@ -496,6 +496,78 @@
     ['google', /google/], ['dji', /dji/], ['gopro', /gopro/]
   ];
 
+  // ---- 画像ロゴ（白背景のPNGから、輪郭のきれいなマスクを作る） ----
+  const LOGO_IMAGES = {
+    canon: 'data:image/png;base64,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'
+  };
+  const LOGO_COLORS = { canon: [206, 10, 10] };
+  const logoMasks = {};
+
+  function buildLogoMask(key){
+    const im = new Image();
+    im.onload = () => {
+      const w = im.naturalWidth, h = im.naturalHeight;
+      const src = document.createElement('canvas');
+      src.width = w; src.height = h;
+      const sctx = src.getContext('2d');
+      sctx.drawImage(im, 0, 0);
+      const px = sctx.getImageData(0, 0, w, h).data;
+      const [r, g, b] = LOGO_COLORS[key];
+
+      // 白からの「濃さ」を不透明度として取り出し、ロゴ部分だけに切り詰める
+      const cov = new Float32Array(w * h);
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++){
+        for (let x = 0; x < w; x++){
+          const c = Math.min(1, Math.max(0, (255 - px[(y * w + x) * 4 + 1]) / (255 - g)));
+          cov[y * w + x] = c;
+          if (c > 0.08){
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+      if (x1 < 0) return;
+      const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+
+      const small = document.createElement('canvas');
+      small.width = cw; small.height = ch;
+      const smctx = small.getContext('2d');
+      const sd = smctx.createImageData(cw, ch);
+      for (let y = 0; y < ch; y++){
+        for (let x = 0; x < cw; x++){
+          const i = (y * cw + x) * 4;
+          sd.data[i] = r; sd.data[i + 1] = g; sd.data[i + 2] = b;
+          sd.data[i + 3] = cov[(y + y0) * w + (x + x0)] * 255;
+        }
+      }
+      smctx.putImageData(sd, 0, 0);
+
+      // 8倍に拡大してから輪郭をしきい値処理し、ぼやけをシャープにする
+      const K = 8;
+      const big = document.createElement('canvas');
+      big.width = cw * K; big.height = ch * K;
+      const bctx = big.getContext('2d');
+      bctx.imageSmoothingEnabled = true;
+      bctx.imageSmoothingQuality = 'high';
+      bctx.drawImage(small, 0, 0, big.width, big.height);
+      const bd = bctx.getImageData(0, 0, big.width, big.height);
+      for (let i = 0; i < bd.data.length; i += 4){
+        const t = Math.min(1, Math.max(0, (bd.data[i + 3] / 255 - 0.35) / 0.3));
+        bd.data[i] = r; bd.data[i + 1] = g; bd.data[i + 2] = b;
+        bd.data[i + 3] = t * t * (3 - 2 * t) * 255;
+      }
+      bctx.putImageData(bd, 0, 0);
+
+      logoMasks[key] = { canvas: big, aspect: cw / ch };
+      if (img) render();
+    };
+    im.src = LOGO_IMAGES[key];
+  }
+  Object.keys(LOGO_IMAGES).forEach(buildLogoMask);
+
   const noneOpt = document.createElement('option');
   noneOpt.value = '';
   noneOpt.textContent = 'なし';
@@ -628,6 +700,7 @@
   const CAPTION_MIN_THICKNESS = 10; // %
   const CAPTION_FONT_RATIO = 0.032; // fixed, relative to photo's short side
   const LOGO_FONT_RATIO = 0.04;     // fixed, relative to photo's short side
+  const LOGO_IMAGE_HEIGHT_RATIO = 0.045; // 画像ロゴの高さ（写真の短辺比、固定）
 
   // キャプションまたはロゴを入れる間は、下の文字帯のために枠を最低このサイズにする
   function enforceCaptionMinThickness(){
@@ -711,9 +784,17 @@
       // 左下: メーカーロゴ（写真の左端にそろえる）
       let leftReserve = 0;
       const brand = geo.logo && BRANDS[geo.logo];
-      if (brand){
+      const mask = geo.logo && logoMasks[geo.logo];
+      const logoX = geo.left * scale;
+      if (mask){
+        const logoH = geo.shortSide * scale * LOGO_IMAGE_HEIGHT_RATIO;
+        const logoW = logoH * mask.aspect;
+        cctx.imageSmoothingEnabled = true;
+        cctx.imageSmoothingQuality = 'high';
+        cctx.drawImage(mask.canvas, logoX, midY - logoH / 2, logoW, logoH);
+        leftReserve = logoX + logoW + logoH;
+      } else if (brand){
         const logoSize = geo.shortSide * scale * LOGO_FONT_RATIO;
-        const logoX = geo.left * scale;
         cctx.textAlign = 'left';
         cctx.font = `${brand.style} ${logoSize}px ${brand.family}`;
         if ('letterSpacing' in cctx) cctx.letterSpacing = `${brand.spacing * logoSize}px`;
