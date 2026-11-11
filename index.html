@@ -319,6 +319,12 @@
     </fieldset>
 
     <fieldset>
+      <legend>メーカーロゴ（左下）</legend>
+      <select id="logoSelect"></select>
+      <p class="hint" style="margin:0;">写真のEXIFから自動選択されます。メーカー書体風の文字で表示します（公式ロゴ画像ではありません）。</p>
+    </fieldset>
+
+    <fieldset>
       <legend>書き出し設定</legend>
       <div class="row">
         <label for="longEdge">長辺のサイズ</label>
@@ -364,6 +370,7 @@
   const swatchesEl = document.getElementById('swatches');
   const polaroid = document.getElementById('polaroid');
   const captionInput = document.getElementById('captionInput');
+  const logoSelect = document.getElementById('logoSelect');
   const longEdge = document.getElementById('longEdge');
   const dimsInfo = document.getElementById('dimsInfo');
   const format = document.getElementById('format');
@@ -443,19 +450,76 @@
     };
     im.src = url;
 
-    if (!captionInput.value.trim()){
-      readExifCaption(file).then(caption => {
-        if (caption && !captionInput.value.trim()){
-          captionInput.value = caption;
-          enforceCaptionMinThickness();
-          render();
-        }
-      }).catch(() => {});
+    // EXIFから自動入力。ユーザーが手で入れた値は上書きしない（前の写真の自動入力分は更新する）
+    readExifInfo(file).then(info => {
+      if (!captionInput.value.trim() || captionAuto){
+        captionInput.value = info ? info.caption : '';
+        captionAuto = !!(info && info.caption);
+      }
+      if (!logoSelect.value || logoAuto){
+        logoSelect.value = info ? info.logo : '';
+        logoAuto = !!(info && info.logo);
+      }
+      enforceCaptionMinThickness();
+      render();
+    }).catch(() => {});
+  }
+
+  // ---- メーカーロゴ（書体風の文字） ----
+  const SANS = '"Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic", sans-serif';
+  const SERIF = 'Georgia, "Times New Roman", serif';
+  const BRANDS = {
+    sony:       { label: 'SONY',       text: 'SONY',       family: SERIF, style: 'bold',        spacing: 0.14 },
+    canon:      { label: 'Canon',      text: 'Canon',      family: SERIF, style: 'italic bold', spacing: 0.02 },
+    nikon:      { label: 'Nikon',      text: 'NIKON',      family: SANS,  style: 'bold',        spacing: 0.10 },
+    fujifilm:   { label: 'FUJIFILM',   text: 'FUJIFILM',   family: SANS,  style: 'bold',        spacing: 0.10 },
+    panasonic:  { label: 'Panasonic',  text: 'Panasonic',  family: SANS,  style: 'bold',        spacing: 0.04 },
+    olympus:    { label: 'OLYMPUS',    text: 'OLYMPUS',    family: SANS,  style: 'bold',        spacing: 0.10 },
+    omsystem:   { label: 'OM SYSTEM',  text: 'OM SYSTEM',  family: SANS,  style: 'bold',        spacing: 0.12 },
+    leica:      { label: 'Leica',      text: 'Leica',      family: SERIF, style: 'italic',      spacing: 0.04 },
+    ricoh:      { label: 'RICOH',      text: 'RICOH',      family: SANS,  style: 'bold',        spacing: 0.10 },
+    pentax:     { label: 'PENTAX',     text: 'PENTAX',     family: SANS,  style: 'bold',        spacing: 0.10 },
+    sigma:      { label: 'SIGMA',      text: 'SIGMA',      family: SANS,  style: 'bold',        spacing: 0.14 },
+    hasselblad: { label: 'Hasselblad', text: 'HASSELBLAD', family: SANS,  style: '300',         spacing: 0.22 },
+    apple:      { label: 'Apple',      text: 'Apple',      family: SANS,  style: '600',         spacing: 0.02 },
+    samsung:    { label: 'Samsung',    text: 'SAMSUNG',    family: SANS,  style: 'bold',        spacing: 0.12 },
+    google:     { label: 'Google',     text: 'Google',     family: SANS,  style: '500',         spacing: 0.02 },
+    dji:        { label: 'DJI',        text: 'DJI',        family: SANS,  style: 'bold',        spacing: 0.14 },
+    gopro:      { label: 'GoPro',      text: 'GoPro',      family: SANS,  style: 'bold',        spacing: 0.04 }
+  };
+  // EXIFのMake文字列 → ブランド（上から順に判定。omsystemはolympusより先）
+  const BRAND_MATCHERS = [
+    ['sony', /sony/], ['canon', /canon/], ['nikon', /nikon/], ['fujifilm', /fuji/],
+    ['panasonic', /panasonic|lumix/], ['omsystem', /om digital|om system/], ['olympus', /olympus/],
+    ['leica', /leica/], ['ricoh', /ricoh/], ['pentax', /pentax/], ['sigma', /sigma/],
+    ['hasselblad', /hasselblad/], ['apple', /apple/], ['samsung', /samsung/],
+    ['google', /google/], ['dji', /dji/], ['gopro', /gopro/]
+  ];
+
+  const noneOpt = document.createElement('option');
+  noneOpt.value = '';
+  noneOpt.textContent = 'なし';
+  logoSelect.appendChild(noneOpt);
+  Object.keys(BRANDS).forEach(key => {
+    const o = document.createElement('option');
+    o.value = key;
+    o.textContent = BRANDS[key].label;
+    logoSelect.appendChild(o);
+  });
+
+  let captionAuto = false; // キャプションがEXIF自動入力のままか
+  let logoAuto = false;
+
+  function detectBrand(make){
+    const m = (make || '').toLowerCase();
+    for (const [key, re] of BRAND_MATCHERS){
+      if (re.test(m)) return key;
     }
+    return '';
   }
 
   // ---- EXIF (Make / Model / LensModel) ----
-  function readExifCaption(file){
+  function readExifInfo(file){
     return file.slice(0, 262144).arrayBuffer().then(buf => {
       const exif = parseExif(buf);
       if (!exif) return null;
@@ -468,7 +532,7 @@
         cam = exif.model || exif.make || '';
       }
       const parts = [cam, exif.lensModel].map(s => (s || '').trim()).filter(Boolean);
-      return parts.length ? parts.join(' / ') : null;
+      return { caption: parts.join(' / '), logo: detectBrand(exif.make) };
     });
   }
 
@@ -563,9 +627,12 @@
   // ---- controls ----
   const CAPTION_MIN_THICKNESS = 10; // %
   const CAPTION_FONT_RATIO = 0.032; // fixed, relative to photo's short side
+  const LOGO_FONT_RATIO = 0.04;     // fixed, relative to photo's short side
 
+  // キャプションまたはロゴを入れる間は、下の文字帯のために枠を最低このサイズにする
   function enforceCaptionMinThickness(){
-    if (captionInput.value.trim() && parseFloat(thickness.value) < CAPTION_MIN_THICKNESS){
+    const hasBottomText = captionInput.value.trim() || logoSelect.value;
+    if (hasBottomText && parseFloat(thickness.value) < CAPTION_MIN_THICKNESS){
       thickness.value = CAPTION_MIN_THICKNESS;
       thicknessVal.textContent = CAPTION_MIN_THICKNESS + '%';
     }
@@ -578,6 +645,12 @@
   });
   polaroid.addEventListener('change', render);
   captionInput.addEventListener('input', () => {
+    captionAuto = false;
+    enforceCaptionMinThickness();
+    render();
+  });
+  logoSelect.addEventListener('change', () => {
+    logoAuto = false;
     enforceCaptionMinThickness();
     render();
   });
@@ -595,15 +668,16 @@
     const w = img.naturalWidth, h = img.naturalHeight;
     const shortSide = Math.min(w, h);
     const caption = captionInput.value.trim();
+    const logo = logoSelect.value;
     let thicknessPercent = parseFloat(thickness.value);
-    if (caption) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
+    if (caption || logo) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
     const t = (thicknessPercent / 100) * shortSide;
     const top = t, left = t, right = t;
     const bottom = polaroid.checked ? t * 2.6 : t;
     return {
       innerW: w, innerH: h,
       top, left, right, bottom,
-      caption, shortSide,
+      caption, logo, shortSide,
       totalW: w + left + right,
       totalH: h + top + bottom
     };
@@ -627,22 +701,43 @@
       geo.innerW * scale, geo.innerH * scale
     );
 
-    if (geo.caption){
+    if (geo.caption || geo.logo){
       const areaTop = (geo.top + geo.innerH) * scale;
       const areaHeight = geo.bottom * scale;
-      let fontSize = geo.shortSide * scale * CAPTION_FONT_RATIO;
-      cctx.textAlign = 'center';
+      const midY = areaTop + areaHeight / 2;
       cctx.textBaseline = 'middle';
       cctx.fillStyle = getContrastTextColor(frameColor);
 
-      const maxTextWidth = canvas.width * 0.88;
-      cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
-      let w = cctx.measureText(geo.caption).width;
-      if (w > maxTextWidth){
-        fontSize *= maxTextWidth / w;
-        cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+      // 左下: メーカーロゴ（写真の左端にそろえる）
+      let leftReserve = 0;
+      const brand = geo.logo && BRANDS[geo.logo];
+      if (brand){
+        const logoSize = geo.shortSide * scale * LOGO_FONT_RATIO;
+        const logoX = geo.left * scale;
+        cctx.textAlign = 'left';
+        cctx.font = `${brand.style} ${logoSize}px ${brand.family}`;
+        if ('letterSpacing' in cctx) cctx.letterSpacing = `${brand.spacing * logoSize}px`;
+        cctx.fillText(brand.text, logoX, midY);
+        const logoW = cctx.measureText(brand.text).width;
+        if ('letterSpacing' in cctx) cctx.letterSpacing = '0px';
+        leftReserve = logoX + logoW + logoSize;
       }
-      cctx.fillText(geo.caption, canvas.width / 2, areaTop + areaHeight / 2);
+
+      // 中央: キャプション（ロゴと重ならない幅に収める）
+      if (geo.caption){
+        let fontSize = geo.shortSide * scale * CAPTION_FONT_RATIO;
+        cctx.textAlign = 'center';
+        const maxTextWidth = leftReserve
+          ? Math.max(2 * (canvas.width / 2 - leftReserve), canvas.width * 0.2)
+          : canvas.width * 0.88;
+        cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+        const w = cctx.measureText(geo.caption).width;
+        if (w > maxTextWidth){
+          fontSize *= maxTextWidth / w;
+          cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
+        }
+        cctx.fillText(geo.caption, canvas.width / 2, midY);
+      }
     }
   }
 
