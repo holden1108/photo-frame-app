@@ -319,6 +319,10 @@
         <option value="camera">自動入力：カメラのみ</option>
         <option value="lens">自動入力：レンズのみ</option>
       </select>
+      <select id="captionAlign">
+        <option value="center">位置：中央（ロゴなしのとき）</option>
+        <option value="left">位置：左寄せ（ロゴなしのとき）</option>
+      </select>
       <input type="text" id="captionInput" placeholder="例：SONY α7IV / FE 35mm F1.4" maxlength="60">
       <p class="hint" style="margin:0;">入力すると写真の下に表示されます（自動で余白を確保）。</p>
     </fieldset>
@@ -335,7 +339,12 @@
     <fieldset>
       <legend>署名（右下）</legend>
       <input type="text" id="signatureInput" value="@holden1108" maxlength="30">
-      <p class="hint" style="margin:0;">灰色で薄く表示されます。空欄にすると非表示になります。</p>
+      <div class="row">
+        <label for="sigOpacity">濃さ</label>
+        <output id="sigOpacityVal">30%</output>
+      </div>
+      <input type="range" id="sigOpacity" min="5" max="100" step="5" value="30">
+      <p class="hint" style="margin:0;">灰色で表示されます。空欄にすると非表示になります。</p>
     </fieldset>
 
     <fieldset>
@@ -387,7 +396,10 @@
   const logoSelect = document.getElementById('logoSelect');
   const lensLogoSelect = document.getElementById('lensLogoSelect');
   const captionPattern = document.getElementById('captionPattern');
+  const captionAlign = document.getElementById('captionAlign');
   const signatureInput = document.getElementById('signatureInput');
+  const sigOpacity = document.getElementById('sigOpacity');
+  const sigOpacityVal = document.getElementById('sigOpacityVal');
   const longEdge = document.getElementById('longEdge');
   const dimsInfo = document.getElementById('dimsInfo');
   const format = document.getElementById('format');
@@ -823,7 +835,6 @@
   const LOGO_IMAGE_HEIGHT_RATIO = 0.045; // 画像ロゴの高さ（写真の短辺比、固定）
   const LOGO_BAND_MIN_RATIO = 0.14;      // ロゴがあるときの、下の帯の最低の高さ（写真の短辺比）
   const SIGNATURE_FONT_RATIO = 0.024;    // 署名の文字サイズ（写真の短辺比、固定）
-  const SIGNATURE_COLOR = 'rgba(128, 128, 128, 0.6)'; // 明るい枠にも暗い枠にも薄く見える灰色
 
   // キャプション・ロゴ・署名のどれかを入れる間は、下の文字帯のために枠を最低このサイズにする
   function enforceCaptionMinThickness(){
@@ -865,6 +876,11 @@
     enforceCaptionMinThickness();
     render();
   });
+  captionAlign.addEventListener('change', render);
+  sigOpacity.addEventListener('input', () => {
+    sigOpacityVal.textContent = sigOpacity.value + '%';
+    render();
+  });
   signatureInput.addEventListener('input', () => {
     enforceCaptionMinThickness();
     render();
@@ -897,6 +913,8 @@
       innerW: w, innerH: h,
       top, left, right, bottom,
       caption, logo, lensLogo, signature, shortSide,
+      captionAlign: captionAlign.value,
+      signatureAlpha: parseInt(sigOpacity.value, 10) / 100,
       totalW: w + left + right,
       totalH: h + top + bottom
     };
@@ -995,13 +1013,19 @@
         rightReserve = sigX - sigW - sigSize * 2;
       }
 
-      // キャプション: ロゴがあれば2段目に左寄せ、なければ中央（署名と重ならない幅に収める）
+      // キャプション: ロゴがあれば2段目に左寄せ。ロゴなしのときは設定に従い中央／左寄せ（署名と重ならない幅に収める）
       if (geo.caption){
         let fontSize = S * CAPTION_FONT_RATIO;
         cctx.fillStyle = getContrastTextColor(frameColor);
+        const leftAligned = twoRows || geo.captionAlign === 'left';
+        const captionX = geo.left * scale;
         let maxTextWidth;
         if (twoRows){
           maxTextWidth = geo.innerW * scale; // 写真の幅いっぱいまで
+        } else if (leftAligned){
+          maxTextWidth = geo.signature
+            ? Math.max(rightReserve - captionX, canvas.width * 0.2)
+            : geo.innerW * scale;
         } else {
           const half = rightReserve - canvas.width / 2;
           maxTextWidth = geo.signature
@@ -1014,14 +1038,14 @@
           fontSize *= maxTextWidth / w;
           cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
         }
-        cctx.textAlign = twoRows ? 'left' : 'center';
-        cctx.fillText(geo.caption, twoRows ? geo.left * scale : canvas.width / 2, captionY);
+        cctx.textAlign = leftAligned ? 'left' : 'center';
+        cctx.fillText(geo.caption, leftAligned ? captionX : canvas.width / 2, captionY);
       }
 
       if (geo.signature){
         cctx.textAlign = 'right';
         cctx.font = `${sigSize}px ${SANS}`;
-        cctx.fillStyle = SIGNATURE_COLOR;
+        cctx.fillStyle = `rgba(128, 128, 128, ${geo.signatureAlpha})`; // 明るい枠にも暗い枠にも見える灰色
         cctx.fillText(geo.signature, sigX, logoY);
       }
     }
