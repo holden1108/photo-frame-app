@@ -795,6 +795,7 @@
   const CAPTION_FONT_RATIO = 0.032; // fixed, relative to photo's short side
   const LOGO_FONT_RATIO = 0.04;     // fixed, relative to photo's short side
   const LOGO_IMAGE_HEIGHT_RATIO = 0.045; // 画像ロゴの高さ（写真の短辺比、固定）
+  const LOGO_BAND_MIN_RATIO = 0.14;      // ロゴがあるときの、下の帯の最低の高さ（写真の短辺比）
   const SIGNATURE_FONT_RATIO = 0.024;    // 署名の文字サイズ（写真の短辺比、固定）
   const SIGNATURE_COLOR = 'rgba(128, 128, 128, 0.6)'; // 明るい枠にも暗い枠にも薄く見える灰色
 
@@ -864,7 +865,9 @@
     if (caption || logo || lensLogo || signature) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
     const t = (thicknessPercent / 100) * shortSide;
     const top = t, left = t, right = t;
-    const bottom = polaroid.checked ? t * 2.6 : t;
+    let bottom = polaroid.checked ? t * 2.6 : t;
+    // ロゴ（1段目）＋キャプション（2段目）が収まる高さを確保する。キャプションの有無では変えない
+    if (logo || lensLogo) bottom = Math.max(bottom, shortSide * LOGO_BAND_MIN_RATIO);
     return {
       innerW: w, innerH: h,
       top, left, right, bottom,
@@ -899,6 +902,16 @@
       cctx.textBaseline = 'middle';
       cctx.fillStyle = getContrastTextColor(frameColor);
 
+      // ロゴがあるときは2段組: 1段目=ロゴ(左)＋署名(右)、2段目=キャプション(左寄せ)
+      const S = geo.shortSide * scale;
+      const twoRows = !!(geo.logo || geo.lensLogo) && !!geo.caption;
+      const row1H = S * LOGO_FONT_RATIO;
+      const row2H = S * CAPTION_FONT_RATIO * 1.2;
+      const rowGap = S * 0.012;
+      const blockTop = areaTop + (areaHeight - (row1H + rowGap + row2H)) / 2;
+      const logoY = twoRows ? blockTop + row1H / 2 : midY;
+      const captionY = twoRows ? blockTop + row1H + rowGap + row2H / 2 : midY;
+
       // 1つのロゴをxの位置に描き、{ 幅, 大きさ } を返す
       const drawLogo = (key, x) => {
         const mask = logoMasks[key];
@@ -911,7 +924,7 @@
             : mask.canvas;
           cctx.imageSmoothingEnabled = true;
           cctx.imageSmoothingQuality = 'high';
-          cctx.drawImage(logoSrc, x, midY - logoH / 2, logoW, logoH);
+          cctx.drawImage(logoSrc, x, logoY - logoH / 2, logoW, logoH);
           return { w: logoW, size: logoH };
         }
         if (brand){
@@ -920,7 +933,7 @@
           cctx.fillStyle = getContrastTextColor(frameColor);
           cctx.font = `${brand.style} ${logoSize}px ${brand.family}`;
           if ('letterSpacing' in cctx) cctx.letterSpacing = `${brand.spacing * logoSize}px`;
-          cctx.fillText(brand.text, x, midY);
+          cctx.fillText(brand.text, x, logoY);
           const logoW = cctx.measureText(brand.text).width;
           if ('letterSpacing' in cctx) cctx.letterSpacing = '0px';
           return { w: logoW, size: logoSize };
@@ -929,10 +942,8 @@
       };
 
       // 左下: メーカーロゴ（カメラ「/」レンズ。写真の左端にそろえる）
-      let leftReserve = 0;
       const logoKeys = [geo.logo, geo.lensLogo].filter(Boolean);
       let cursorX = geo.left * scale;
-      let lastSize = 0;
       logoKeys.forEach((key, i) => {
         if (i > 0){
           const sepSize = geo.shortSide * scale * LOGO_FONT_RATIO;
@@ -941,16 +952,12 @@
           cctx.fillStyle = getContrastTextColor(frameColor);
           cctx.font = `300 ${sepSize}px ${SANS}`;
           cursorX += gap;
-          cctx.fillText('/', cursorX, midY);
+          cctx.fillText('/', cursorX, logoY);
           cursorX += cctx.measureText('/').width + gap;
         }
         const drawn = drawLogo(key, cursorX);
-        if (drawn){
-          cursorX += drawn.w;
-          lastSize = drawn.size;
-        }
+        if (drawn) cursorX += drawn.w;
       });
-      if (logoKeys.length) leftReserve = cursorX + lastSize;
 
       // 右下: 署名（写真の右端にそろえる。幅だけ先に測り、描画は最後）
       let rightReserve = canvas.width; // 右側の文字が使っている領域の左端
@@ -963,29 +970,34 @@
         rightReserve = sigX - sigW - sigSize * 2;
       }
 
-      // 中央: キャプション（左右のロゴ・署名と重ならない幅に収める）
+      // キャプション: ロゴがあれば2段目に左寄せ、なければ中央（署名と重ならない幅に収める）
       if (geo.caption){
-        let fontSize = geo.shortSide * scale * CAPTION_FONT_RATIO;
-        cctx.textAlign = 'center';
+        let fontSize = S * CAPTION_FONT_RATIO;
         cctx.fillStyle = getContrastTextColor(frameColor);
-        const half = Math.min(canvas.width / 2 - leftReserve, rightReserve - canvas.width / 2);
-        const maxTextWidth = (leftReserve || geo.signature)
-          ? Math.min(canvas.width * 0.88, Math.max(2 * half, canvas.width * 0.2))
-          : canvas.width * 0.88;
+        let maxTextWidth;
+        if (twoRows){
+          maxTextWidth = geo.innerW * scale; // 写真の幅いっぱいまで
+        } else {
+          const half = rightReserve - canvas.width / 2;
+          maxTextWidth = geo.signature
+            ? Math.min(canvas.width * 0.88, Math.max(2 * half, canvas.width * 0.2))
+            : canvas.width * 0.88;
+        }
         cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
         const w = cctx.measureText(geo.caption).width;
         if (w > maxTextWidth){
           fontSize *= maxTextWidth / w;
           cctx.font = `${fontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`;
         }
-        cctx.fillText(geo.caption, canvas.width / 2, midY);
+        cctx.textAlign = twoRows ? 'left' : 'center';
+        cctx.fillText(geo.caption, twoRows ? geo.left * scale : canvas.width / 2, captionY);
       }
 
       if (geo.signature){
         cctx.textAlign = 'right';
         cctx.font = `${sigSize}px ${SANS}`;
         cctx.fillStyle = SIGNATURE_COLOR;
-        cctx.fillText(geo.signature, sigX, midY);
+        cctx.fillText(geo.signature, sigX, logoY);
       }
     }
   }
