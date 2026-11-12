@@ -314,6 +314,11 @@
 
     <fieldset>
       <legend>キャプション</legend>
+      <select id="captionPattern">
+        <option value="both">自動入力：カメラ / レンズ</option>
+        <option value="camera">自動入力：カメラのみ</option>
+        <option value="lens">自動入力：レンズのみ</option>
+      </select>
       <input type="text" id="captionInput" placeholder="例：SONY α7IV / FE 35mm F1.4" maxlength="60">
       <p class="hint" style="margin:0;">入力すると写真の下に表示されます（自動で余白を確保）。</p>
     </fieldset>
@@ -377,6 +382,7 @@
   const polaroid = document.getElementById('polaroid');
   const captionInput = document.getElementById('captionInput');
   const logoSelect = document.getElementById('logoSelect');
+  const captionPattern = document.getElementById('captionPattern');
   const signatureInput = document.getElementById('signatureInput');
   const longEdge = document.getElementById('longEdge');
   const dimsInfo = document.getElementById('dimsInfo');
@@ -460,9 +466,11 @@
 
     // EXIFから自動入力。ユーザーが手で入れた値は上書きしない（前の写真の自動入力分は更新する）
     readExifInfo(file).then(info => {
+      lastExif = info;
       if (!captionInput.value.trim() || captionAuto){
-        captionInput.value = info ? info.caption : '';
-        captionAuto = !!(info && info.caption);
+        const caption = info ? exifCaption(info) : '';
+        captionInput.value = caption;
+        captionAuto = !!caption;
       }
       if (!logoSelect.value || logoAuto){
         logoSelect.value = info ? info.logo : '';
@@ -620,6 +628,15 @@
 
   let captionAuto = false; // キャプションがEXIF自動入力のままか
   let logoAuto = false;
+  let lastExif = null; // 直近に読んだ写真の { camera, lens, logo }
+
+  // 選択中のパターンに合わせて、EXIFからキャプション文字列を作る
+  function exifCaption(info){
+    const pattern = captionPattern.value;
+    if (pattern === 'camera') return info.camera;
+    if (pattern === 'lens') return info.lens;
+    return [info.camera, info.lens].filter(Boolean).join(' / ');
+  }
 
   // ボディのメーカー(Make)を優先し、判定できなければレンズ名から判定する（例: Voigtländerのレンズ）
   function detectBrand(make, lens){
@@ -645,8 +662,11 @@
       } else {
         cam = exif.model || exif.make || '';
       }
-      const parts = [cam, exif.lensModel].map(s => (s || '').trim()).filter(Boolean);
-      return { caption: parts.join(' / '), logo: detectBrand(exif.make, exif.lensModel) };
+      return {
+        camera: cam.trim(),
+        lens: (exif.lensModel || '').trim(),
+        logo: detectBrand(exif.make, exif.lensModel)
+      };
     });
   }
 
@@ -765,6 +785,16 @@
     captionAuto = false;
     enforceCaptionMinThickness();
     render();
+  });
+  // パターンを切り替えたら、自動入力のままのキャプションを作り直す（手入力は上書きしない）
+  captionPattern.addEventListener('change', () => {
+    if (lastExif && (!captionInput.value.trim() || captionAuto)){
+      const caption = exifCaption(lastExif);
+      captionInput.value = caption;
+      captionAuto = !!caption;
+      enforceCaptionMinThickness();
+      render();
+    }
   });
   logoSelect.addEventListener('change', () => {
     logoAuto = false;
