@@ -471,11 +471,6 @@
     // EXIFから自動入力。ユーザーが手で入れた値は上書きしない（前の写真の自動入力分は更新する）
     readExifInfo(file).then(info => {
       lastExif = info;
-      if (!captionInput.value.trim() || captionAuto){
-        const caption = info ? exifCaption(info) : '';
-        captionInput.value = caption;
-        captionAuto = !!caption;
-      }
       if (!logoSelect.value || logoAuto){
         logoSelect.value = info ? info.logo : '';
         logoAuto = !!(info && info.logo);
@@ -483,6 +478,13 @@
       if (!lensLogoSelect.value || lensLogoAuto){
         lensLogoSelect.value = info ? info.lensLogo : '';
         lensLogoAuto = !!(info && info.lensLogo);
+      }
+      // ロゴの選択を反映してキャプションを作る（ロゴにしたメーカー名は省く）
+      if (info){
+        refreshAutoCaption(true);
+      } else if (captionAuto){
+        captionInput.value = '';
+        captionAuto = false;
       }
       enforceCaptionMinThickness();
       render();
@@ -648,11 +650,33 @@
   let lastExif = null; // 直近に読んだ写真の { camera, lens, logo, lensLogo }
 
   // 選択中のパターンに合わせて、EXIFからキャプション文字列を作る
+  // ロゴとして表示するメーカーの名前（Canon, NIKKOR など）を、文字列から取り除く
+  function stripBrand(text, key){
+    if (!key) return text;
+    const brandKey = key === 'canon_mono' ? 'canon' : key;
+    const patterns = LENS_MATCHERS.filter(([k]) => k === brandKey).map(([, re]) => re);
+    return text
+      .split(/\s+/)
+      .filter(token => !patterns.some(re => re.test(token.toLowerCase())))
+      .join(' ');
+  }
+
   function exifCaption(info){
+    const camera = stripBrand(info.camera, logoSelect.value);
+    const lens = stripBrand(info.lens, lensLogoSelect.value);
     const pattern = captionPattern.value;
-    if (pattern === 'camera') return info.camera;
-    if (pattern === 'lens') return info.lens;
-    return [info.camera, info.lens].filter(Boolean).join(' + ');
+    if (pattern === 'camera') return camera;
+    if (pattern === 'lens') return lens;
+    return [camera, lens].filter(Boolean).join(' + ');
+  }
+
+  // EXIF由来のキャプションを作り直す（手入力は上書きしない。includeEmpty=trueなら空欄も埋める）
+  function refreshAutoCaption(includeEmpty){
+    if (!lastExif) return;
+    if (!captionAuto && !(includeEmpty && !captionInput.value.trim())) return;
+    const caption = exifCaption(lastExif);
+    captionInput.value = caption;
+    captionAuto = !!caption;
   }
 
   function matchBrand(text, matchers){
@@ -682,13 +706,15 @@
     return file.slice(0, 262144).arrayBuffer().then(buf => {
       const exif = parseExif(buf);
       if (!exif) return null;
-      let cam = '';
-      if (exif.make && exif.model){
-        cam = exif.model.toLowerCase().includes(exif.make.toLowerCase())
+      // メーカー名は先頭の1語だけ使う（"NIKON CORPORATION" → "NIKON"）。モデル名に含まれていれば重ねない
+      const makeWord = (exif.make || '').trim().split(/\s+/)[0];
+      let cam;
+      if (makeWord && exif.model){
+        cam = exif.model.toLowerCase().includes(makeWord.toLowerCase())
           ? exif.model
-          : `${exif.make} ${exif.model}`;
+          : `${makeWord} ${exif.model}`;
       } else {
-        cam = exif.model || exif.make || '';
+        cam = exif.model || makeWord || '';
       }
       const logo = detectBrand(exif.make);
       let lensLogo = detectLensBrand(exif.lensModel);
@@ -822,21 +848,20 @@
   });
   // パターンを切り替えたら、自動入力のままのキャプションを作り直す（手入力は上書きしない）
   captionPattern.addEventListener('change', () => {
-    if (lastExif && (!captionInput.value.trim() || captionAuto)){
-      const caption = exifCaption(lastExif);
-      captionInput.value = caption;
-      captionAuto = !!caption;
-      enforceCaptionMinThickness();
-      render();
-    }
+    refreshAutoCaption(true);
+    enforceCaptionMinThickness();
+    render();
   });
+  // ロゴを変えたら、自動入力のキャプションからもそのメーカー名を省く（手入力は触らない）
   logoSelect.addEventListener('change', () => {
     logoAuto = false;
+    refreshAutoCaption(false);
     enforceCaptionMinThickness();
     render();
   });
   lensLogoSelect.addEventListener('change', () => {
     lensLogoAuto = false;
+    refreshAutoCaption(false);
     enforceCaptionMinThickness();
     render();
   });
