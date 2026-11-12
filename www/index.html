@@ -315,7 +315,7 @@
     <fieldset>
       <legend>キャプション</legend>
       <select id="captionPattern">
-        <option value="both">自動入力：カメラ / レンズ</option>
+        <option value="both">自動入力：カメラ + レンズ</option>
         <option value="camera">自動入力：カメラのみ</option>
         <option value="lens">自動入力：レンズのみ</option>
       </select>
@@ -325,8 +325,11 @@
 
     <fieldset>
       <legend>メーカーロゴ（左下）</legend>
+      <div class="row"><label for="logoSelect">カメラ</label></div>
       <select id="logoSelect"></select>
-      <p class="hint" style="margin:0;">写真のEXIFから自動選択されます。Canon・LUMIX・Voigtländerはロゴ画像、その他は書体風の文字で表示します。「単色」は枠の色に合わせて白／濃色になります。</p>
+      <div class="row"><label for="lensLogoSelect">レンズ（選ぶと「カメラ / レンズ」の順に並べて表示）</label></div>
+      <select id="lensLogoSelect"></select>
+      <p class="hint" style="margin:0;">写真のEXIFから自動選択されます（レンズはカメラと同じメーカーのときは選ばれません）。Canon・LUMIX・Voigtländerはロゴ画像、その他は書体風の文字で表示します。「単色」は枠の色に合わせて白／濃色になります。</p>
     </fieldset>
 
     <fieldset>
@@ -382,6 +385,7 @@
   const polaroid = document.getElementById('polaroid');
   const captionInput = document.getElementById('captionInput');
   const logoSelect = document.getElementById('logoSelect');
+  const lensLogoSelect = document.getElementById('lensLogoSelect');
   const captionPattern = document.getElementById('captionPattern');
   const signatureInput = document.getElementById('signatureInput');
   const longEdge = document.getElementById('longEdge');
@@ -476,6 +480,10 @@
         logoSelect.value = info ? info.logo : '';
         logoAuto = !!(info && info.logo);
       }
+      if (!lensLogoSelect.value || lensLogoAuto){
+        lensLogoSelect.value = info ? info.lensLogo : '';
+        lensLogoAuto = !!(info && info.lensLogo);
+      }
       enforceCaptionMinThickness();
       render();
     }).catch(() => {});
@@ -503,7 +511,13 @@
     google:     { label: 'Google',     text: 'Google',     family: SANS,  style: '500',         spacing: 0.02 },
     dji:        { label: 'DJI',        text: 'DJI',        family: SANS,  style: 'bold',        spacing: 0.14 },
     gopro:      { label: 'GoPro',      text: 'GoPro',      family: SANS,  style: 'bold',        spacing: 0.04 },
-    voigtlander:{ label: 'Voigtländer', text: 'Voigtländer', family: SERIF, style: 'italic bold', spacing: 0.02 }
+    voigtlander:{ label: 'Voigtländer', text: 'Voigtländer', family: SERIF, style: 'italic bold', spacing: 0.02 },
+    // レンズ専業メーカー（書体風の文字）
+    zeiss:      { label: 'ZEISS',      text: 'ZEISS',      family: SANS,  style: 'bold',        spacing: 0.18 },
+    tamron:     { label: 'TAMRON',     text: 'TAMRON',     family: SANS,  style: 'bold',        spacing: 0.12 },
+    tokina:     { label: 'TOKINA',     text: 'TOKINA',     family: SANS,  style: 'bold',        spacing: 0.12 },
+    samyang:    { label: 'SAMYANG',    text: 'SAMYANG',    family: SANS,  style: 'bold',        spacing: 0.12 },
+    laowa:      { label: 'LAOWA',      text: 'LAOWA',      family: SANS,  style: 'bold',        spacing: 0.12 }
   };
   // EXIFのMake文字列 → ブランド（上から順に判定。omsystemはolympusより先）
   const BRAND_MATCHERS = [
@@ -615,38 +629,52 @@
   }
   Object.keys(LOGO_IMAGES).forEach(buildLogoMask);
 
-  const noneOpt = document.createElement('option');
-  noneOpt.value = '';
-  noneOpt.textContent = 'なし';
-  logoSelect.appendChild(noneOpt);
-  Object.keys(BRANDS).forEach(key => {
-    const o = document.createElement('option');
-    o.value = key;
-    o.textContent = BRANDS[key].label;
-    logoSelect.appendChild(o);
+  [logoSelect, lensLogoSelect].forEach(select => {
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = 'なし';
+    select.appendChild(noneOpt);
+    Object.keys(BRANDS).forEach(key => {
+      const o = document.createElement('option');
+      o.value = key;
+      o.textContent = BRANDS[key].label;
+      select.appendChild(o);
+    });
   });
 
   let captionAuto = false; // キャプションがEXIF自動入力のままか
   let logoAuto = false;
-  let lastExif = null; // 直近に読んだ写真の { camera, lens, logo }
+  let lensLogoAuto = false;
+  let lastExif = null; // 直近に読んだ写真の { camera, lens, logo, lensLogo }
 
   // 選択中のパターンに合わせて、EXIFからキャプション文字列を作る
   function exifCaption(info){
     const pattern = captionPattern.value;
     if (pattern === 'camera') return info.camera;
     if (pattern === 'lens') return info.lens;
-    return [info.camera, info.lens].filter(Boolean).join(' / ');
+    return [info.camera, info.lens].filter(Boolean).join(' + ');
   }
 
-  // ボディのメーカー(Make)を優先し、判定できなければレンズ名から判定する（例: Voigtländerのレンズ）
-  function detectBrand(make, lens){
-    for (const text of [make, lens]){
-      const m = (text || '').toLowerCase();
-      for (const [key, re] of BRAND_MATCHERS){
-        if (re.test(m)) return key;
-      }
+  function matchBrand(text, matchers){
+    const m = (text || '').toLowerCase();
+    for (const [key, re] of matchers){
+      if (re.test(m)) return key;
     }
     return '';
+  }
+
+  // カメラのメーカー(Make)からロゴを判定
+  function detectBrand(make){
+    return matchBrand(make, BRAND_MATCHERS);
+  }
+
+  // レンズ名からロゴを判定（レンズ専業メーカーや、NIKKOR/Zuikoなどの名前も見る）
+  const LENS_MATCHERS = [
+    ['nikon', /nikkor/], ['olympus', /zuiko/], ['zeiss', /zeiss/], ['tamron', /tamron/],
+    ['tokina', /tokina/], ['samyang', /samyang|rokinon/], ['laowa', /laowa/]
+  ].concat(BRAND_MATCHERS);
+  function detectLensBrand(lens){
+    return matchBrand(lens, LENS_MATCHERS);
   }
 
   // ---- EXIF (Make / Model / LensModel) ----
@@ -662,10 +690,14 @@
       } else {
         cam = exif.model || exif.make || '';
       }
+      const logo = detectBrand(exif.make);
+      let lensLogo = detectLensBrand(exif.lensModel);
+      if (lensLogo === logo) lensLogo = ''; // カメラと同じメーカーなら、レンズ側は出さない
       return {
         camera: cam.trim(),
         lens: (exif.lensModel || '').trim(),
-        logo: detectBrand(exif.make, exif.lensModel)
+        logo,
+        lensLogo
       };
     });
   }
@@ -768,7 +800,8 @@
 
   // キャプション・ロゴ・署名のどれかを入れる間は、下の文字帯のために枠を最低このサイズにする
   function enforceCaptionMinThickness(){
-    const hasBottomText = captionInput.value.trim() || logoSelect.value || signatureInput.value.trim();
+    const hasBottomText = captionInput.value.trim() || logoSelect.value || lensLogoSelect.value
+      || signatureInput.value.trim();
     if (hasBottomText && parseFloat(thickness.value) < CAPTION_MIN_THICKNESS){
       thickness.value = CAPTION_MIN_THICKNESS;
       thicknessVal.textContent = CAPTION_MIN_THICKNESS + '%';
@@ -801,6 +834,11 @@
     enforceCaptionMinThickness();
     render();
   });
+  lensLogoSelect.addEventListener('change', () => {
+    lensLogoAuto = false;
+    enforceCaptionMinThickness();
+    render();
+  });
   signatureInput.addEventListener('input', () => {
     enforceCaptionMinThickness();
     render();
@@ -820,16 +858,17 @@
     const shortSide = Math.min(w, h);
     const caption = captionInput.value.trim();
     const logo = logoSelect.value;
+    const lensLogo = lensLogoSelect.value;
     const signature = signatureInput.value.trim();
     let thicknessPercent = parseFloat(thickness.value);
-    if (caption || logo || signature) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
+    if (caption || logo || lensLogo || signature) thicknessPercent = Math.max(thicknessPercent, CAPTION_MIN_THICKNESS);
     const t = (thicknessPercent / 100) * shortSide;
     const top = t, left = t, right = t;
     const bottom = polaroid.checked ? t * 2.6 : t;
     return {
       innerW: w, innerH: h,
       top, left, right, bottom,
-      caption, logo, signature, shortSide,
+      caption, logo, lensLogo, signature, shortSide,
       totalW: w + left + right,
       totalH: h + top + bottom
     };
@@ -853,38 +892,65 @@
       geo.innerW * scale, geo.innerH * scale
     );
 
-    if (geo.caption || geo.logo || geo.signature){
+    if (geo.caption || geo.logo || geo.lensLogo || geo.signature){
       const areaTop = (geo.top + geo.innerH) * scale;
       const areaHeight = geo.bottom * scale;
       const midY = areaTop + areaHeight / 2;
       cctx.textBaseline = 'middle';
       cctx.fillStyle = getContrastTextColor(frameColor);
 
-      // 左下: メーカーロゴ（写真の左端にそろえる）
+      // 1つのロゴをxの位置に描き、{ 幅, 大きさ } を返す
+      const drawLogo = (key, x) => {
+        const mask = logoMasks[key];
+        const brand = BRANDS[key];
+        if (mask){
+          const logoH = geo.shortSide * scale * (mask.heightRatio || LOGO_IMAGE_HEIGHT_RATIO);
+          const logoW = logoH * mask.aspect;
+          const logoSrc = mask.tint
+            ? getTintedMask(mask, getContrastTextColor(frameColor))
+            : mask.canvas;
+          cctx.imageSmoothingEnabled = true;
+          cctx.imageSmoothingQuality = 'high';
+          cctx.drawImage(logoSrc, x, midY - logoH / 2, logoW, logoH);
+          return { w: logoW, size: logoH };
+        }
+        if (brand){
+          const logoSize = geo.shortSide * scale * LOGO_FONT_RATIO;
+          cctx.textAlign = 'left';
+          cctx.fillStyle = getContrastTextColor(frameColor);
+          cctx.font = `${brand.style} ${logoSize}px ${brand.family}`;
+          if ('letterSpacing' in cctx) cctx.letterSpacing = `${brand.spacing * logoSize}px`;
+          cctx.fillText(brand.text, x, midY);
+          const logoW = cctx.measureText(brand.text).width;
+          if ('letterSpacing' in cctx) cctx.letterSpacing = '0px';
+          return { w: logoW, size: logoSize };
+        }
+        return null;
+      };
+
+      // 左下: メーカーロゴ（カメラ「/」レンズ。写真の左端にそろえる）
       let leftReserve = 0;
-      const brand = geo.logo && BRANDS[geo.logo];
-      const mask = geo.logo && logoMasks[geo.logo];
-      const logoX = geo.left * scale;
-      if (mask){
-        const logoH = geo.shortSide * scale * (mask.heightRatio || LOGO_IMAGE_HEIGHT_RATIO);
-        const logoW = logoH * mask.aspect;
-        const logoSrc = mask.tint
-          ? getTintedMask(mask, getContrastTextColor(frameColor))
-          : mask.canvas;
-        cctx.imageSmoothingEnabled = true;
-        cctx.imageSmoothingQuality = 'high';
-        cctx.drawImage(logoSrc, logoX, midY - logoH / 2, logoW, logoH);
-        leftReserve = logoX + logoW + logoH;
-      } else if (brand){
-        const logoSize = geo.shortSide * scale * LOGO_FONT_RATIO;
-        cctx.textAlign = 'left';
-        cctx.font = `${brand.style} ${logoSize}px ${brand.family}`;
-        if ('letterSpacing' in cctx) cctx.letterSpacing = `${brand.spacing * logoSize}px`;
-        cctx.fillText(brand.text, logoX, midY);
-        const logoW = cctx.measureText(brand.text).width;
-        if ('letterSpacing' in cctx) cctx.letterSpacing = '0px';
-        leftReserve = logoX + logoW + logoSize;
-      }
+      const logoKeys = [geo.logo, geo.lensLogo].filter(Boolean);
+      let cursorX = geo.left * scale;
+      let lastSize = 0;
+      logoKeys.forEach((key, i) => {
+        if (i > 0){
+          const sepSize = geo.shortSide * scale * LOGO_FONT_RATIO;
+          const gap = sepSize * 0.7;
+          cctx.textAlign = 'left';
+          cctx.fillStyle = getContrastTextColor(frameColor);
+          cctx.font = `300 ${sepSize}px ${SANS}`;
+          cursorX += gap;
+          cctx.fillText('/', cursorX, midY);
+          cursorX += cctx.measureText('/').width + gap;
+        }
+        const drawn = drawLogo(key, cursorX);
+        if (drawn){
+          cursorX += drawn.w;
+          lastSize = drawn.size;
+        }
+      });
+      if (logoKeys.length) leftReserve = cursorX + lastSize;
 
       // 右下: 署名（写真の右端にそろえる。幅だけ先に測り、描画は最後）
       let rightReserve = canvas.width; // 右側の文字が使っている領域の左端
